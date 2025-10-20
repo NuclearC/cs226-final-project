@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(CS226FinalProject)
 
+set(CMAKE_C_STANDARD 23)
 
 find_package(SDL3 REQUIRED)
 find_package(Vulkan REQUIRED)
