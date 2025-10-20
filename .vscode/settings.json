@@ -1,5 +1,13 @@
 {
     "files.associations": {
-        "sdl_video.h": "c"
+        "sdl_video.h": "c",
+        "vulkan.h": "c",
+        "vulkan_wayland.h": "c",
+        "span": "c",
+        "type_traits": "c",
+        "format": "c",
+        "queue": "c",
+        "thread": "c",
+        "vector": "c"
     }
 }

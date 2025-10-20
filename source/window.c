@@ -38,6 +38,7 @@ int PollEvents(void) {
       return -1;
     }
   }
+  SDL_Delay(1000);
   return 0;
 }
 
@@ -51,3 +52,5 @@ int DestroyWindow(void) {
 }
 
 int VulkanInitializeSurface(void) { return 0; }
+
+void* GetWindowHandle(void) { return window; }

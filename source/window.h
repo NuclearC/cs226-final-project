@@ -14,4 +14,6 @@ int DestroyWindow(void);
 /* initialize Vulkan Surface */
 int VulkanInitializeSurface(void);
 
+void* GetWindowHandle(void);
+
 #endif  // WINDOW_H_
