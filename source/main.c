@@ -8,13 +8,14 @@
 #include "window.h"
 
 #define CHECK_RESULT(x, msg)   \
-  if (0 != x) {                \
+  if (0 > x) {                 \
     fprintf(stderr, msg "\n"); \
     Cleanup();                 \
     return -1;                 \
   }
 
 static void Cleanup(void) {
+  DestroyRenderer();
   DestroyWindow();
   VulkanCleanup();
 }
@@ -35,6 +36,7 @@ int main(void) {
                "Failed to create Vulkan surface");
   CHECK_RESULT(VulkanCreateSwapchain(window_width, window_height),
                "Failed to create Vulkan swapchain");
+  CHECK_RESULT(CreateRenderer(), "Failed to create the rendering resources");
 
   /* main loop */
   for (;;) {
@@ -42,7 +44,10 @@ int main(void) {
       break;
     }
 
-    break;
+    int image_index = VulkanSCAcquireImage();
+    CHECK_RESULT(image_index, "Failed to acquire image");
+
+    VulkanSCPresent();
   }
 
   /* cleanup */

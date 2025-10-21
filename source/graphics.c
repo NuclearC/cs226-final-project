@@ -11,6 +11,7 @@ static VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 static VkDevice device = VK_NULL_HANDLE;
 static VkSurfaceKHR surface = VK_NULL_HANDLE;
 static VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+static VkQueue graphics_queue = VK_NULL_HANDLE;
 
 static VkImage* swapchain_images = NULL;
 static uint32_t swapchain_image_count = 0;
@@ -18,7 +19,13 @@ static VkImageView* swapchain_image_views = NULL;
 
 static VkFormat swapchain_image_format = VK_FORMAT_R8G8B8A8_SRGB;
 
+static VkSemaphore *image_available_semaphores = NULL,
+                   *render_finished_semaphores = NULL;
+
 static uint32_t queue_family_index = 0;
+
+static uint32_t swapchain_current_frame = 0;
+static uint32_t swapchain_current_image = 0;
 
 static const char* const instance_extensions[] = {
     VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME};
@@ -134,6 +141,30 @@ static int CreateDevice(void) {
       VK_SUCCESS) {
     return -1;
   }
+
+  vkGetDeviceQueue(device, queue_family_index, 0, &graphics_queue);
+
+  return 0;
+}
+
+static int CreateSwapchainSemaphores(void) {
+  image_available_semaphores =
+      (VkSemaphore*)malloc(sizeof(VkSemaphore) * swapchain_image_count);
+  render_finished_semaphores =
+      (VkSemaphore*)malloc(sizeof(VkSemaphore) * swapchain_image_count);
+  for (uint32_t i = 0; i < swapchain_image_count; i++) {
+    VkSemaphoreCreateInfo create_info = {};
+    create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    if (vkCreateSemaphore(device, &create_info, VK_NULL_HANDLE,
+                          &image_available_semaphores[i]) != VK_SUCCESS ||
+        vkCreateSemaphore(device, &create_info, VK_NULL_HANDLE,
+                          &render_finished_semaphores[i]) != VK_SUCCESS) {
+      fprintf(stderr, "Failed to create image semaphores %d \n", i);
+      return -1;
+    }
+  }
+
   return 0;
 }
 
@@ -161,8 +192,33 @@ static int CreateSwapchainImageViews(void) {
       return -1;
     }
   }
+  return 0;
 }
 
+static void DestroySwapchainSemaphores(void) {
+  if (image_available_semaphores != NULL) {
+    for (uint32_t i = 0; i < swapchain_image_count; i++) {
+      if (image_available_semaphores[i] != VK_NULL_HANDLE) {
+        vkDestroySemaphore(device, image_available_semaphores[i],
+                           VK_NULL_HANDLE);
+        image_available_semaphores[i] = VK_NULL_HANDLE;
+      }
+    }
+    free(image_available_semaphores);
+    image_available_semaphores = NULL;
+  }
+  if (render_finished_semaphores != NULL) {
+    for (uint32_t i = 0; i < swapchain_image_count; i++) {
+      if (render_finished_semaphores[i] != VK_NULL_HANDLE) {
+        vkDestroySemaphore(device, render_finished_semaphores[i],
+                           VK_NULL_HANDLE);
+        render_finished_semaphores[i] = VK_NULL_HANDLE;
+      }
+    }
+    free(render_finished_semaphores);
+    render_finished_semaphores = NULL;
+  }
+}
 static void DestroySwapchainImageViews(void) {
   if (swapchain_image_views != NULL) {
     for (uint32_t i = 0; i < swapchain_image_count; i++) {
@@ -206,6 +262,7 @@ static void DestroyInstance(void) {
 }
 
 void VulkanCleanup(void) {
+  DestroySwapchainSemaphores();
   DestroySwapchainImageViews();
   DestroySwapchain();
   DestroySurface();
@@ -311,6 +368,39 @@ int VulkanCreateSwapchain(uint32_t width, uint32_t height) {
                           swapchain_images);
 
   CreateSwapchainImageViews();
+  CreateSwapchainSemaphores();
+
+  return 0;
+}
+
+int VulkanSCAcquireImage(void) {
+  if (VK_SUCCESS !=
+      vkAcquireNextImageKHR(device, swapchain, 100u,
+                            image_available_semaphores[swapchain_current_frame],
+                            VK_NULL_HANDLE, &swapchain_current_image)) {
+    return -1;
+  }
+
+  return swapchain_current_image;
+}
+
+int VulkanSCPresent(void) {
+  VkPresentInfoKHR present_info = {};
+  present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+  present_info.pImageIndices = &swapchain_current_image;
+
+  present_info.pWaitSemaphores =
+      render_finished_semaphores[swapchain_current_frame];
+
+  present_info.swapchainCount = 1;
+  present_info.pSwapchains = &swapchain;
+
+  if (VK_SUCCESS != vkQueuePresentKHR(graphics_queue, &present_info)) {
+    return -1;
+  }
+
+  swapchain_current_frame =
+      (swapchain_current_frame + 1) % swapchain_image_count;
 
   return 0;
 }

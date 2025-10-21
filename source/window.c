@@ -38,7 +38,6 @@ int PollEvents(void) {
       return -1;
     }
   }
-  SDL_Delay(1000);
   return 0;
 }
 
