@@ -6,32 +6,37 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_wayland.h>
 
-static VkInstance instance = VK_NULL_HANDLE;
-static VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-static VkDevice device = VK_NULL_HANDLE;
-static VkSurfaceKHR surface = VK_NULL_HANDLE;
-static VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-static VkQueue graphics_queue = VK_NULL_HANDLE;
+VkDevice device = VK_NULL_HANDLE;
 
-static VkImage* swapchain_images = NULL;
-static uint32_t swapchain_image_count = 0;
-static VkImageView* swapchain_image_views = NULL;
+VkInstance instance = VK_NULL_HANDLE;
+VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+VkSurfaceKHR surface = VK_NULL_HANDLE;
+VkSwapchainKHR swapchain = VK_NULL_HANDLE;
 
-static VkFormat swapchain_image_format = VK_FORMAT_R8G8B8A8_SRGB;
+VkQueue graphics_queue = VK_NULL_HANDLE;
 
-static VkSemaphore *image_available_semaphores = NULL,
-                   *render_finished_semaphores = NULL;
+VkImage* swapchain_images = NULL;
 
-static uint32_t queue_family_index = 0;
+uint32_t swapchain_image_count = 0;
 
-static uint32_t swapchain_current_frame = 0;
-static uint32_t swapchain_current_image = 0;
+VkImageView* swapchain_image_views = NULL;
+
+VkFormat swapchain_image_format = VK_FORMAT_R8G8B8A8_SRGB;
+
+VkSemaphore *image_available_semaphores = NULL,
+            *render_finished_semaphores = NULL;
+VkFence* in_flight_fences = NULL;
+
+uint32_t queue_family_index = 0;
+
+uint32_t swapchain_current_frame = 0;
+uint32_t swapchain_current_image = 0;
 
 static const char* const instance_extensions[] = {
     VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME};
 static const char* const instance_layers[] = {"VK_LAYER_KHRONOS_validation"};
 static const char* const device_extensions[] = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME};
 
 static int InitializeInstance(void) {
   VkApplicationInfo app_info = {};
@@ -134,8 +139,14 @@ static int CreateDevice(void) {
   create_info.queueCreateInfoCount = 1;
   create_info.pQueueCreateInfos = &queue_create_info;
 
+  VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering = {};
+  dynamic_rendering.dynamicRendering = true;
+  dynamic_rendering.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+
   VkPhysicalDeviceFeatures device_features = {};
   create_info.pEnabledFeatures = &device_features;
+  create_info.pNext = &dynamic_rendering;
 
   if (vkCreateDevice(physical_device, &create_info, VK_NULL_HANDLE, &device) !=
       VK_SUCCESS) {
@@ -152,14 +163,20 @@ static int CreateSwapchainSemaphores(void) {
       (VkSemaphore*)malloc(sizeof(VkSemaphore) * swapchain_image_count);
   render_finished_semaphores =
       (VkSemaphore*)malloc(sizeof(VkSemaphore) * swapchain_image_count);
+  in_flight_fences = (VkFence*)malloc(sizeof(VkFence) * swapchain_image_count);
   for (uint32_t i = 0; i < swapchain_image_count; i++) {
     VkSemaphoreCreateInfo create_info = {};
     create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    VkFenceCreateInfo fence_create_info = {};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     if (vkCreateSemaphore(device, &create_info, VK_NULL_HANDLE,
                           &image_available_semaphores[i]) != VK_SUCCESS ||
         vkCreateSemaphore(device, &create_info, VK_NULL_HANDLE,
-                          &render_finished_semaphores[i]) != VK_SUCCESS) {
+                          &render_finished_semaphores[i]) != VK_SUCCESS ||
+        vkCreateFence(device, &fence_create_info, VK_NULL_HANDLE,
+                      &in_flight_fences[i])) {
       fprintf(stderr, "Failed to create image semaphores %d \n", i);
       return -1;
     }
@@ -201,7 +218,6 @@ static void DestroySwapchainSemaphores(void) {
       if (image_available_semaphores[i] != VK_NULL_HANDLE) {
         vkDestroySemaphore(device, image_available_semaphores[i],
                            VK_NULL_HANDLE);
-        image_available_semaphores[i] = VK_NULL_HANDLE;
       }
     }
     free(image_available_semaphores);
@@ -212,11 +228,19 @@ static void DestroySwapchainSemaphores(void) {
       if (render_finished_semaphores[i] != VK_NULL_HANDLE) {
         vkDestroySemaphore(device, render_finished_semaphores[i],
                            VK_NULL_HANDLE);
-        render_finished_semaphores[i] = VK_NULL_HANDLE;
       }
     }
     free(render_finished_semaphores);
     render_finished_semaphores = NULL;
+  }
+  if (in_flight_fences != NULL) {
+    for (uint32_t i = 0; i < swapchain_image_count; i++) {
+      if (in_flight_fences[i] != VK_NULL_HANDLE) {
+        vkDestroyFence(device, in_flight_fences[i], VK_NULL_HANDLE);
+      }
+    }
+    free(in_flight_fences);
+    in_flight_fences = NULL;
   }
 }
 static void DestroySwapchainImageViews(void) {
@@ -224,7 +248,6 @@ static void DestroySwapchainImageViews(void) {
     for (uint32_t i = 0; i < swapchain_image_count; i++) {
       if (swapchain_image_views[i] != VK_NULL_HANDLE) {
         vkDestroyImageView(device, swapchain_image_views[i], VK_NULL_HANDLE);
-        swapchain_image_views[i] = VK_NULL_HANDLE;
       }
     }
     free(swapchain_image_views);
@@ -375,11 +398,14 @@ int VulkanCreateSwapchain(uint32_t width, uint32_t height) {
 
 int VulkanSCAcquireImage(void) {
   if (VK_SUCCESS !=
-      vkAcquireNextImageKHR(device, swapchain, 100u,
+      vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
                             image_available_semaphores[swapchain_current_frame],
                             VK_NULL_HANDLE, &swapchain_current_image)) {
     return -1;
   }
+
+  printf("ACQUIRE image %d at frame %d \n", swapchain_current_image,
+         swapchain_current_frame);
 
   return swapchain_current_image;
 }
@@ -389,8 +415,9 @@ int VulkanSCPresent(void) {
   present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
   present_info.pImageIndices = &swapchain_current_image;
 
+  present_info.waitSemaphoreCount = 1;
   present_info.pWaitSemaphores =
-      render_finished_semaphores[swapchain_current_frame];
+      &render_finished_semaphores[swapchain_current_image];
 
   present_info.swapchainCount = 1;
   present_info.pSwapchains = &swapchain;

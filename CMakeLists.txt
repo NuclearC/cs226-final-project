@@ -10,6 +10,6 @@ file(GLOB SOURCE_FILES
     ${PROJECT_SOURCE_DIR}/source/*.c)
 
 add_executable(CS226FinalProject ${SOURCE_FILES})
-target_link_libraries(CS226FinalProject SDL3::SDL3 Vulkan::Vulkan)
+target_link_libraries(CS226FinalProject SDL3::SDL3 Vulkan::Vulkan m)
 
 

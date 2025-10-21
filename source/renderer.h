@@ -6,6 +6,8 @@
 /* create the rendering resources */
 int CreateRenderer(void);
 
+void Render(void);
+
 void DestroyRenderer(void);
 
 #endif  // RENDERER_H_

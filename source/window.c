@@ -36,6 +36,9 @@ int PollEvents(void) {
   while (SDL_PollEvent(&event)) {
     if (event.type == SDL_EVENT_QUIT) {
       return -1;
+    } else if (event.type == SDL_EVENT_KEY_UP &&
+               event.key.scancode == SDL_SCANCODE_ESCAPE) {
+      return -1;
     }
   }
   return 0;

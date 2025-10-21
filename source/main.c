@@ -16,8 +16,8 @@
 
 static void Cleanup(void) {
   DestroyRenderer();
-  DestroyWindow();
   VulkanCleanup();
+  DestroyWindow();
 }
 
 int main(void) {
@@ -47,7 +47,11 @@ int main(void) {
     int image_index = VulkanSCAcquireImage();
     CHECK_RESULT(image_index, "Failed to acquire image");
 
-    VulkanSCPresent();
+    /* run the render */
+    Render();
+
+    /* present the image */
+    CHECK_RESULT(VulkanSCPresent(), "Failed to present? why?");
   }
 
   /* cleanup */

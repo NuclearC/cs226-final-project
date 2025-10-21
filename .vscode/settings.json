@@ -8,6 +8,9 @@
         "format": "c",
         "queue": "c",
         "thread": "c",
-        "vector": "c"
+        "vector": "c",
+        "sdl_vulkan.h": "c",
+        "graphics.h": "c",
+        "chrono": "c"
     }
 }
