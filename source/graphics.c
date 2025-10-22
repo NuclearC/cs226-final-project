@@ -26,6 +26,8 @@ VkImageView* swapchain_image_views = NULL;
 
 VkFormat swapchain_image_format = VK_FORMAT_R8G8B8A8_SRGB;
 
+VkExtent2D swapchain_size = {0, 0};
+
 VkSemaphore *image_available_semaphores = NULL,
             *render_finished_semaphores = NULL;
 VkFence* in_flight_fences = NULL;
@@ -44,7 +46,7 @@ static const char* const device_extensions[] = {
 static int InitializeInstance(void) {
   VkApplicationInfo app_info = {};
   app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-  app_info.apiVersion = VK_API_VERSION_1_4;
+  app_info.apiVersion = VK_API_VERSION_1_3;
   app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
   app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
   app_info.pApplicationName = "CS226 Final Project";
@@ -380,6 +382,8 @@ int VulkanCreateSwapchain(uint32_t width, uint32_t height) {
   create_info.imageExtent.height =
       SDL_clamp(height, surface_capabilites.minImageExtent.height,
                 surface_capabilites.maxImageExtent.height);
+
+  swapchain_size = create_info.imageExtent;
 
   create_info.imageArrayLayers = 1;
   create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;

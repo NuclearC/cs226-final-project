@@ -8,4 +8,8 @@ int FindRequiredMemoryType(VkMemoryPropertyFlags property_flags,
 int AllocateBufferMemory(VkBuffer buffer, VkMemoryPropertyFlags property_flags,
                          VkDeviceMemory* device_memory);
 
+int AllocateImagesMemory(VkImage* images, uint32_t count,
+                         VkMemoryPropertyFlags property_flags,
+                         VkDeviceMemory* device_memory);
+
 #endif  // MEM_H_
