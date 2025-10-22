@@ -1,10 +1,12 @@
 #include "graphics.h"
 
 #include <SDL3/SDL_vulkan.h>
+#include <X11/Xlib.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_wayland.h>
+#include <vulkan/vulkan_xlib.h>
 
 VkDevice device = VK_NULL_HANDLE;
 
@@ -17,6 +19,7 @@ VkQueue graphics_queue = VK_NULL_HANDLE;
 
 VkImage* swapchain_images = NULL;
 
+uint32_t swapchain_frame_count = 0;
 uint32_t swapchain_image_count = 0;
 
 VkImageView* swapchain_image_views = NULL;
@@ -33,7 +36,7 @@ uint32_t swapchain_current_frame = 0;
 uint32_t swapchain_current_image = 0;
 
 static const char* const instance_extensions[] = {
-    VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME};
+    VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_XLIB_SURFACE_EXTENSION_NAME};
 static const char* const instance_layers[] = {"VK_LAYER_KHRONOS_validation"};
 static const char* const device_extensions[] = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME};
@@ -160,23 +163,29 @@ static int CreateDevice(void) {
 
 static int CreateSwapchainSemaphores(void) {
   image_available_semaphores =
-      (VkSemaphore*)malloc(sizeof(VkSemaphore) * swapchain_image_count);
+      (VkSemaphore*)malloc(sizeof(VkSemaphore) * swapchain_frame_count);
   render_finished_semaphores =
       (VkSemaphore*)malloc(sizeof(VkSemaphore) * swapchain_image_count);
-  in_flight_fences = (VkFence*)malloc(sizeof(VkFence) * swapchain_image_count);
-  for (uint32_t i = 0; i < swapchain_image_count; i++) {
-    VkSemaphoreCreateInfo create_info = {};
-    create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VkFenceCreateInfo fence_create_info = {};
-    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
+  in_flight_fences = (VkFence*)malloc(sizeof(VkFence) * swapchain_frame_count);
+  VkSemaphoreCreateInfo create_info = {};
+  create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+  VkFenceCreateInfo fence_create_info = {};
+  fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+  fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+  for (uint32_t i = 0; i < swapchain_frame_count; i++) {
     if (vkCreateSemaphore(device, &create_info, VK_NULL_HANDLE,
                           &image_available_semaphores[i]) != VK_SUCCESS ||
-        vkCreateSemaphore(device, &create_info, VK_NULL_HANDLE,
-                          &render_finished_semaphores[i]) != VK_SUCCESS ||
         vkCreateFence(device, &fence_create_info, VK_NULL_HANDLE,
                       &in_flight_fences[i])) {
+      fprintf(stderr, "Failed to create image semaphores %d \n", i);
+      return -1;
+    }
+  }
+  for (uint32_t i = 0; i < swapchain_image_count; i++) {
+    if (vkCreateSemaphore(device, &create_info, VK_NULL_HANDLE,
+                          &render_finished_semaphores[i]) != VK_SUCCESS) {
       fprintf(stderr, "Failed to create image semaphores %d \n", i);
       return -1;
     }
@@ -214,7 +223,7 @@ static int CreateSwapchainImageViews(void) {
 
 static void DestroySwapchainSemaphores(void) {
   if (image_available_semaphores != NULL) {
-    for (uint32_t i = 0; i < swapchain_image_count; i++) {
+    for (uint32_t i = 0; i < swapchain_frame_count; i++) {
       if (image_available_semaphores[i] != VK_NULL_HANDLE) {
         vkDestroySemaphore(device, image_available_semaphores[i],
                            VK_NULL_HANDLE);
@@ -234,7 +243,7 @@ static void DestroySwapchainSemaphores(void) {
     render_finished_semaphores = NULL;
   }
   if (in_flight_fences != NULL) {
-    for (uint32_t i = 0; i < swapchain_image_count; i++) {
+    for (uint32_t i = 0; i < swapchain_frame_count; i++) {
       if (in_flight_fences[i] != VK_NULL_HANDLE) {
         vkDestroyFence(device, in_flight_fences[i], VK_NULL_HANDLE);
       }
@@ -343,6 +352,7 @@ int VulkanCreateSwapchain(uint32_t width, uint32_t height) {
   required_image_count =
       SDL_clamp(required_image_count, surface_capabilites.minImageCount,
                 surface_capabilites.maxImageCount);
+  swapchain_frame_count = 2;
 
   bool found_surface_format = false;
   for (uint32_t i = 0; i < format_count; i++) {
@@ -397,6 +407,11 @@ int VulkanCreateSwapchain(uint32_t width, uint32_t height) {
 }
 
 int VulkanSCAcquireImage(void) {
+  /* wait for the previous submission on this frame */
+  vkWaitForFences(device, 1, &in_flight_fences[swapchain_current_frame],
+                  VK_TRUE, UINT64_MAX);
+  vkResetFences(device, 1, &in_flight_fences[swapchain_current_frame]);
+
   if (VK_SUCCESS !=
       vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
                             image_available_semaphores[swapchain_current_frame],
@@ -422,12 +437,18 @@ int VulkanSCPresent(void) {
   present_info.swapchainCount = 1;
   present_info.pSwapchains = &swapchain;
 
-  if (VK_SUCCESS != vkQueuePresentKHR(graphics_queue, &present_info)) {
-    return -1;
+  VkResult res = vkQueuePresentKHR(graphics_queue, &present_info);
+  if (VK_SUCCESS != res) {
+    if (VK_SUBOPTIMAL_KHR == res) {
+      fprintf(stderr, "suboptimal present %d \n", res);
+    } else {
+      fprintf(stderr, "failed to present %d \n", res);
+      return -1;
+    }
   }
 
   swapchain_current_frame =
-      (swapchain_current_frame + 1) % swapchain_image_count;
+      (swapchain_current_frame + 1) % swapchain_frame_count;
 
   return 0;
 }

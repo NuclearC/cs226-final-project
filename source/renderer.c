@@ -5,12 +5,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "mem.h"
+
 extern VkDevice device;
 extern uint32_t queue_family_index;
 extern VkQueue graphics_queue;
 extern uint32_t swapchain_image_count;
 extern uint32_t swapchain_current_frame;
 extern uint32_t swapchain_current_image;
+extern VkImage* swapchain_images;
 extern VkImageView* swapchain_image_views;
 extern VkSemaphore* image_available_semaphores;
 extern VkSemaphore* render_finished_semaphores;
@@ -86,14 +89,76 @@ int CreateRenderer(void) {
     fprintf(stderr, "Failed to create command buffers");
     return -1;
   }
+
+  VkBuffer buf1 = CreateBuffer(100u, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  VkDeviceMemory buf1_memory;
+  if (0 != AllocateBufferMemory(buf1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                &buf1_memory)) {
+    return -1;
+  }
+}
+
+VkBuffer CreateBuffer(uint32_t size, VkBufferUsageFlags usage_flags) {
+  VkBufferCreateInfo create_info = {};
+  create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  create_info.size = size;
+  create_info.usage = usage_flags;
+
+  VkBuffer res = VK_NULL_HANDLE;
+  if (VK_SUCCESS !=
+      vkCreateBuffer(device, &create_info, VK_NULL_HANDLE, &res)) {
+    fprintf(stderr, "failed to create buffer %d %d \n", size, usage_flags);
+  }
+
+  return res;
+}
+
+static void PreRender(void) {
+  VkCommandBuffer cmd = command_buffers[swapchain_current_frame];
+  /* transition the current image to Present layout */
+  VkImageMemoryBarrier image_memory_barrier = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+      .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .image = swapchain_images[swapchain_current_image],
+      .subresourceRange = {
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = 1,
+      }};
+
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0,
+                       nullptr, 0, nullptr, 1, &image_memory_barrier);
+}
+
+static void PostRender(void) {
+  VkCommandBuffer cmd = command_buffers[swapchain_current_frame];
+  /* transition the current image to Present layout */
+  VkImageMemoryBarrier image_memory_barrier = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+      .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+      .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+      .image = swapchain_images[swapchain_current_image],
+      .subresourceRange = {
+          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = 0,
+          .layerCount = 1,
+      }};
+
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                       VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0,
+                       nullptr, 1, &image_memory_barrier);
 }
 
 void Render(void) {
-  /* wait for the previous submission on this frame */
-  vkWaitForFences(device, 1, &in_flight_fences[swapchain_current_frame],
-                  VK_TRUE, UINT64_MAX);
-  vkResetFences(device, 1, &in_flight_fences[swapchain_current_frame]);
-
   VkCommandBuffer cmd = command_buffers[swapchain_current_frame];
 
   VkCommandBufferBeginInfo begin_info = {};
@@ -102,6 +167,8 @@ void Render(void) {
   /* reset and begin rendering */
   vkResetCommandBuffer(cmd, 0);
   vkBeginCommandBuffer(cmd, &begin_info);
+
+  PreRender();
 
   /* dynamic rendering */
   VkRenderingInfo rendering_info = {};
@@ -134,6 +201,9 @@ void Render(void) {
   /* TODO: rendering */
 
   vkCmdEndRendering(cmd);
+
+  PostRender();
+
   vkEndCommandBuffer(cmd);
 
   SubmitRenderCommandBuffer();

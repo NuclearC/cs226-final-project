@@ -23,7 +23,7 @@ static void Cleanup(void) {
 int main(void) {
   int window_width = 800;
   int window_height = 600;
-  setenv("SDL_VIDEODRIVER", "wayland", 1);
+  /* setenv("SDL_VIDEODRIVER", "wayland", 1);
   /* initialize Vulkan */
 
   CHECK_RESULT(VulkanInitialize(),

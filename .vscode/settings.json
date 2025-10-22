@@ -12,5 +12,6 @@
         "sdl_vulkan.h": "c",
         "graphics.h": "c",
         "chrono": "c"
-    }
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }
