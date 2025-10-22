@@ -351,9 +351,15 @@ int VulkanCreateSwapchain(uint32_t width, uint32_t height) {
                                        surface_formats);
 
   uint32_t required_image_count = 4;
-  required_image_count =
-      SDL_clamp(required_image_count, surface_capabilites.minImageCount,
-                surface_capabilites.maxImageCount);
+  if (surface_capabilites.minImageCount > 0) {
+    required_image_count =
+        SDL_max(required_image_count, surface_capabilites.minImageCount);
+  }
+  if (surface_capabilites.maxImageCount > 0) {
+    required_image_count =
+        SDL_min(required_image_count, surface_capabilites.maxImageCount);
+  }
+
   swapchain_frame_count = 2;
 
   bool found_surface_format = false;
