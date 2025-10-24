@@ -91,6 +91,7 @@ int AllocateImagesMemory(VkImage* images, uint32_t count,
       FindRequiredMemoryType(property_flags, required_type_bits);
 
   if (memory_type_index == memory_properties.memoryTypeCount) {
+    free(offsets);
     return -1;
   }
 
@@ -101,12 +102,14 @@ int AllocateImagesMemory(VkImage* images, uint32_t count,
 
   if (VK_SUCCESS !=
       vkAllocateMemory(device, &alloc_info, VK_NULL_HANDLE, device_memory)) {
+    free(offsets);
     return -1;
   }
 
   for (uint32_t i = 0; i < count; i++) {
     if (VK_SUCCESS !=
         vkBindImageMemory(device, images[i], *device_memory, offsets[i])) {
+      free(offsets);
       return -1;
     }
   }
