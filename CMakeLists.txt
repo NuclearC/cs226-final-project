@@ -9,7 +9,9 @@ find_package(Vulkan REQUIRED)
 file(GLOB SOURCE_FILES 
     ${PROJECT_SOURCE_DIR}/source/*.c)
 
-add_executable(CS226FinalProject ${SOURCE_FILES})
+add_executable(CS226FinalProject ${SOURCE_FILES}
+        source/texture_renderer.c
+        source/texture_renderer.h)
 target_link_libraries(CS226FinalProject SDL3::SDL3 Vulkan::Vulkan m)
 
 
